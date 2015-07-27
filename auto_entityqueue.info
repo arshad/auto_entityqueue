@@ -1,0 +1,5 @@
+name = Auto Entityqueue
+description = Automatically adds entities to entityqueues.
+package = Entityqueue
+core = 7.x
+dependencies[] = entityqueue
