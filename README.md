@@ -11,5 +11,7 @@ Download and enable the module.
 
 ## Configuration
 
+![alt tag](https://www.drupal.org/files/auto_entityqueue.png)
+
 
 
