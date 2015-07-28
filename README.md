@@ -13,5 +13,6 @@ Download and enable the module.
 
 ![alt tag](https://www.drupal.org/files/auto_entityqueue.png)
 
+## Project
 
-
+See http://drupal.org/project/auto_entityqueue.
