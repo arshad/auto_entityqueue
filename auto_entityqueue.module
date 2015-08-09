@@ -21,7 +21,7 @@ function auto_entityqueue_form_ctools_export_ui_edit_item_form_alter(&$form, &$f
     '#title' => t('Automatically add entities to queue.'),
     '#type' => 'checkbox',
     '#default_value' => isset($queue->settings['auto_add']) ? $queue->settings['auto_add'] : FALSE,
-    '#description' => t('New entities of select types will be automatically added to the queue.'),
+    '#description' => t('New entities of selected types will be automatically added to the queue.'),
   );
 }
 
