@@ -5,7 +5,7 @@ Automatically adds entities to [entityqueues](https://www.drupal.org/project/ent
 
 Download and enable the module.
 
-## Dependecy
+## Dependency
 
 [Entityqueue](https://www.drupal.org/project/entityqueue).
 
@@ -16,3 +16,7 @@ Download and enable the module.
 ## Project
 
 See http://drupal.org/project/auto_entityqueue.
+
+## License
+
+http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
