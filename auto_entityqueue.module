@@ -1,43 +1,46 @@
 <?php
+
 /**
  * @file
- * Automatically adds entities to entityqueues.
+ * Handles automatically adding entities to entityqueues.
  */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\entityqueue\Entity\EntityQueue;
+use Drupal\entityqueue\Entity\EntitySubqueue;
 
 /**
- * Implements hook_form_FORM_ID_alter().
+ * Implements hook_form_alter().
+ *
+ * Adds an additional option allowing entities to be added upon creation.
  */
-function auto_entityqueue_form_ctools_export_ui_edit_item_form_alter(&$form, &$form_state, $form_id) {
-  // Check for entityqueue.
-  if (!isset($form_state['plugin']['module']) || $form_state['plugin']['module'] != 'entityqueue') {
-    return;
+function auto_entityqueue_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if (preg_match('/^entity_queue_(add|edit)_form$/', $form_id)) {
+    // Get entity settings from the queue.
+    $entity_settings = $form_state->getFormObject()->getEntity()->getEntitySettings();
+
+    // Add a checkbox setting for automatically adding entities.
+    $form['entity_settings']['settings']['handler_settings']['auto_add'] = array(
+      '#default_value' => isset($entity_settings['handler_settings']['auto_add']) ? $entity_settings['handler_settings']['auto_add'] : FALSE,
+      '#description' => t('New entities of selected types will be automatically added to the queue.'),
+      '#title' => t('Automatically add entities to queue'),
+      '#type' => 'checkbox',
+    );
   }
-
-  // Get reference to queue.
-  $queue = &$form_state['item'];
-
-  // Add a checkbox field.
-  $form['settings']['entityreference_field']['auto_add'] = array(
-    '#title' => t('Automatically add entities to queue.'),
-    '#type' => 'checkbox',
-    '#default_value' => isset($queue->settings['auto_add']) ? $queue->settings['auto_add'] : FALSE,
-    '#description' => t('New entities of selected types will be automatically added to the queue.'),
-  );
 }
 
 /**
  * Implements hook_entity_insert().
  */
-function auto_entityqueue_entity_insert($entity, $type) {
-  // Check for entity type.
-  if (!isset($entity->type)) {
-    return;
-  }
+function auto_entityqueue_entity_insert(EntityInterface $entity) {
+  $type = $entity->getEntityTypeId();
+  $bundle = $entity->bundle();
 
-  // Get entityqueues for this type.
-  $queues = auto_entityqueue_get_queues_by_type_and_bundle($type, $entity->type);
+  // Get queues for this entity type and bundle combo.
+  $queues = auto_entityqueue_get_queues_by_type_and_bundle($type, $bundle);
   if (count($queues)) {
-    // Add entity to each queues.
+    // Add the entity to each queues returned.
     foreach ($queues as $queue) {
       auto_entityqueue_add_entity_to_queue($entity, $queue);
     }
@@ -45,83 +48,51 @@ function auto_entityqueue_entity_insert($entity, $type) {
 }
 
 /**
- * Helper function to add an entity to a queue.
+ * Add an entity to a queue.
  *
  * @param $entity
- *  The entity object.
- * @param $queue
- *  The entityqueue object.
+ * @param EntityQueue $queue
  */
-function auto_entityqueue_add_entity_to_queue($entity, $queue) {
-  // Get the target field name.
-  $field_name = _entityqueue_get_target_field_name($queue->target_type);
+function auto_entityqueue_add_entity_to_queue($entity, EntityQueue $queue) {
+  // Get the entity id
+  $entity_id = $entity->id();
 
-  // Get the entity id.
-  $entity_wrapper = entity_metadata_wrapper($queue->target_type, $entity);
-  $entity_id = $entity_wrapper->getIdentifier();
+  // Get the subqueues
+  $query = \Drupal::entityQuery('entity_subqueue')->condition('queue', $queue->id());
+  $result = $query->execute();
+  $subqueues = EntitySubqueue::loadMultiple($result);
 
-  // Get subqueues.
-  $subqueues = auto_entityqueue_get_subqueues_for_queue($queue->name);
-  if (count($subqueues)) {
-    // Add to each subqueue.
-    foreach ($subqueues as $subqueue) {
-      $wrapper = entity_metadata_wrapper('entityqueue_subqueue', $subqueue);
-      $wrapper->{$field_name}[] = $entity_id;
-      $wrapper->save();
-    }
+  // Add entity to each subqueue
+  foreach ($subqueues as $subqueue) {
+    $items = $subqueue->get('items')->getValue();
+    $items[] = array('target_id' => $entity_id);
+    $subqueue->set('items', $items);
+    $subqueue->save();
   }
 }
 
 /**
- * Loads multiple queues with a specific target type and bundle.
+ * Load queues with specific type and bundle.
  *
- * @param string $target_type
- *   An entity type (e.g. 'node', 'comment', 'user').
+ * @param string $type
  * @param string $bundle
- *   An entity bundle (e.g. 'page', 'article').
  *
  * @return array
- *   An array of EntityQueue objects, keyed by queue name.
  */
-function auto_entityqueue_get_queues_by_type_and_bundle($target_type, $bundle) {
+function auto_entityqueue_get_queues_by_type_and_bundle($type, $bundle) {
   $target_queues = array();
 
-  $queues = entityqueue_queue_load_by_target_type($target_type);
+  // Load entity queues by type.
+  $queues = EntityQueue::loadMultipleByTargetType($type);
   foreach ($queues as $queue) {
-    if (
-      in_array($bundle, $queue->settings['target_bundles']) // Check for bundle
-      && $queue->settings['auto_add'] // Check if auto_add is enabled.
-      && !isset($queue->disabled) // Check if queue is not disabled.
+    $entity_settings = $queue->getEntitySettings();
+    if (in_array($bundle, $entity_settings['handler_settings']['target_bundles']) // Check bundle.
+      && $entity_settings['handler_settings']['auto_add'] // Check if auto add is enabled.
+      && $queue->status() // Check if queue is enabled.
     ) {
-      $target_queues[$queue->name] = $queue;
+      $target_queues[] = $queue;
     }
   }
 
   return $target_queues;
-}
-
-/**
- * Returns subqueues for an entityqueue.
- *
- * @param string $name
- *  The entityqueue name.
- *
- * @return array.
- *  An array of subqueues.
- */
-function auto_entityqueue_get_subqueues_for_queue($name) {
-  $subqueues = array();
-
-  $query = new EntityFieldQuery();
-  $query
-    ->entityCondition('entity_type', 'entityqueue_subqueue')
-    ->entityCondition('bundle', $name);
-  $result = $query->execute();
-  if (!empty($result['entityqueue_subqueue'])) {
-    foreach ($result['entityqueue_subqueue'] as $entityqueue_subqueue) {
-      $subqueues[] = entityqueue_subqueue_load($entityqueue_subqueue->subqueue_id);
-    }
-  }
-
-  return $subqueues;
 }
